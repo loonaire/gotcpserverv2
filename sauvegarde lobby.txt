@@ -1,0 +1,61 @@
+type Lobby struct {
+	mu                sync.RWMutex
+	clients           map[string]*client
+	entering          chan client
+	leaving           chan *client
+	broadcastMessages chan string
+}
+
+func (l *Lobby) addClient(cli *client) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.clients[cli.name] = cli
+}
+
+func (l *Lobby) deleteClient(clientName string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.clients, clientName)
+}
+
+func (l *Lobby) checkClientConnected(clientName string) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if _, isConnected := l.clients[clientName]; isConnected {
+		return true
+	}
+	return false
+}
+
+func (l *Lobby) broadcaster() {
+	for {
+		select {
+		case msg := <-l.broadcastMessages:
+			// Broadcast incoming message to all
+			// clients' outgoing message channels.
+			for _, cli := range l.clients {
+				cli.outch <- msg
+			}
+
+		case cli := <-l.entering:
+			l.clients[cli.name] = &cli
+
+			//Informez les nouveaux clients de votre collection de clients actuelle, créer un tableau puis join le tableau pour avoir une string
+			var onlines []string
+			for _, c := range l.clients {
+				onlines = append(onlines, c.name)
+			}
+			cli.outch <- fmt.Sprintf("%d clients: %s", len(l.clients), strings.Join(onlines, ", "))
+
+		case cli := <-l.leaving:
+			//close(cli.inch)
+			//close(cli.outch)
+			delete(l.clients, cli.name)
+
+		}
+	}
+}
+
+func (l *Lobby) sendTo(clientName string, message string) {
+	l.clients[clientName].outch <- message
+}
